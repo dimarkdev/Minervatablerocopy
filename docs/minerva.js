@@ -144,12 +144,12 @@ function renderResumen(c, themeChanged){
       ${kpiCard('Cobertura vigente (30 días)', r.vigentes_30d + ' / ' + r.total_locales,
         `${Math.round(100*r.vigentes_30d/r.total_locales)}% del universo con precio fresco`,
         'Locales con al menos un precio propio (Pul/Estancia 92) cargado en los últimos 30 días, sobre el total de locales monitoreados. Un local puede tener historial de precio propio pero si no se relevó hace más de 30 días, no cuenta como "vigente".')}
-      ${kpiCard('Competitividad de precio', r.precio_por_corte.filter(x=>x.mas_economico==='propio').length+'/'+r.precio_por_corte.length,
-        'cortes donde Minerva es más económica que la competencia',
-        'Para cada corte con datos de ambas partes, se compara el precio promedio propio vs. el precio promedio de competencia. Se cuenta en cuántos cortes Minerva queda por debajo (más barata).', 'accent')}
-      ${kpiCard('Diferencial promedio de precio', (r.precio_por_corte.reduce((a,x)=>a+x.diferencial_pct,0)/r.precio_por_corte.length).toFixed(1)+'%',
-        'vs. precio promedio de competencia, por corte',
-        'Promedio simple de: (precio propio − precio competencia) / precio competencia × 100, calculado por corte y luego promediado entre todos los cortes comparables. Negativo = Minerva más barata en promedio.', 'accent')}
+      ${kpiCard('Más barata en el piso', r.precio_por_corte.filter(x=>x.diferencial_min_pct<0).length+'/'+r.precio_por_corte.length,
+        'cortes donde el mínimo de Minerva es más bajo que el mínimo de competencia',
+        'Compara el precio mínimo relevado de Minerva vs. el precio mínimo relevado de la competencia, corte por corte. Cuenta en cuántos cortes el piso de Minerva es más barato.', 'accent')}
+      ${kpiCard('Más barata en el techo', r.precio_por_corte.filter(x=>x.diferencial_max_pct<0).length+'/'+r.precio_por_corte.length,
+        'cortes donde el máximo de Minerva es más bajo que el máximo de competencia',
+        'Compara el precio máximo relevado de Minerva vs. el precio máximo relevado de la competencia, corte por corte. Cuenta en cuántos cortes el techo de Minerva es más barato.', 'accent')}
       ${kpiCard('Locales monitoreados', fmtNum(r.total_locales),
         `${r.locales_historico_con_propia} tuvieron precio propio relevado alguna vez`,
         'Cantidad total de puntos de venta distintos con al menos un registro de precio (propio o competencia) en la base.')}
@@ -157,7 +157,7 @@ function renderResumen(c, themeChanged){
 
     <div class="card">
       <div class="card-head">
-        <div><div class="card-title">Precio promedio por corte · Minerva vs. Competencia</div><div class="card-sub">Solo cortes con datos de ambos lados — sin promedio general</div></div>
+        <div><div class="card-title">Rango de precio por corte · Minerva vs. Competencia</div><div class="card-sub">Mínimo y máximo relevado — sin promedios</div></div>
       </div>
       <div class="chart-wrap" style="height:340px;"><canvas id="chResumenCortes"></canvas></div>
     </div>
@@ -166,10 +166,12 @@ function renderResumen(c, themeChanged){
       <div class="card">
         <div class="card-head"><div class="card-title">Top cortes por volumen relevado</div></div>
         <div class="table-scroll"><table>
-          <thead><tr><th>Corte</th><th class="num">Precio propio</th><th class="num">Precio comp.</th><th class="num">Diferencial</th></tr></thead>
+          <thead><tr><th>Corte</th><th class="num">Mín. propio</th><th class="num">Máx. propio</th><th class="num">Mín. comp.</th><th class="num">Máx. comp.</th><th class="num">Dif. mín.</th><th class="num">Dif. máx.</th></tr></thead>
           <tbody>${r.precio_por_corte.map(x => `
-            <tr><td>${x.corte}</td><td class="num">${fmtGs(x.precio_propio)}</td><td class="num">${fmtGs(x.precio_competencia)}</td>
-            <td class="num"><span class="tag ${x.mas_economico==='propio'?'tag-propio':'tag-comp'}">${x.diferencial_pct>0?'+':''}${x.diferencial_pct}%</span></td></tr>`).join('')}
+            <tr><td>${x.corte}</td><td class="num">${fmtGs(x.propio_min)}</td><td class="num">${fmtGs(x.propio_max)}</td>
+            <td class="num">${fmtGs(x.comp_min)}</td><td class="num">${fmtGs(x.comp_max)}</td>
+            <td class="num"><span class="tag ${x.diferencial_min_pct<0?'tag-propio':'tag-comp'}">${x.diferencial_min_pct>0?'+':''}${x.diferencial_min_pct}%</span></td>
+            <td class="num"><span class="tag ${x.diferencial_max_pct<0?'tag-propio':'tag-comp'}">${x.diferencial_max_pct>0?'+':''}${x.diferencial_max_pct}%</span></td></tr>`).join('')}
           </tbody></table></div>
       </div>
       <div class="card">
@@ -179,16 +181,17 @@ function renderResumen(c, themeChanged){
     </div>
 
     <div class="card">
-      <div class="card-head"><div class="card-title">Precios por cadena</div><div class="card-sub">Cadena real, según maestro de PDVs — no inferida por nombre</div></div>
+      <div class="card-head"><div class="card-title">Precios por cadena</div><div class="card-sub">Rango mínimo–máximo, cadena real según maestro de PDVs</div></div>
       <div class="table-scroll"><table>
-        <thead><tr><th>Cadena</th><th class="num">Locales</th><th class="num">Con Minerva</th><th class="num">Precio propio prom.</th><th class="num">Precio competencia prom.</th></tr></thead>
+        <thead><tr><th>Cadena</th><th class="num">Locales</th><th class="num">Con Minerva</th><th class="num">Mín. propio</th><th class="num">Máx. propio</th><th class="num">Mín. comp.</th><th class="num">Máx. comp.</th></tr></thead>
         <tbody>${r.precios_por_cadena_real.map(x => `
           <tr><td>${x.cadena}</td><td class="num">${x.locales_total}</td><td class="num">${x.locales_con_propia}</td>
-          <td class="num">${fmtGs(x.precio_propio_prom)}</td><td class="num">${fmtGs(x.precio_competencia_prom)}</td></tr>`).join('')}
+          <td class="num">${fmtGs(x.propio_min)}</td><td class="num">${fmtGs(x.propio_max)}</td>
+          <td class="num">${fmtGs(x.comp_min)}</td><td class="num">${fmtGs(x.comp_max)}</td></tr>`).join('')}
         </tbody></table></div>
       <div class="note-box">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/></svg>
-        <span>${r.universo_priorizado.locales_en_universo} de ${r.universo_priorizado.locales_totales} locales relevados (${r.universo_priorizado.pct}%) están en el maestro de PDVs oficial de Minerva. El resto (mayormente auditorías de competencia en locales sueltos) queda como "Otros / Independiente".</span>
+        <span>Se descartaron ${(DATA.meta.filtro_outliers_precio && DATA.meta.filtro_outliers_precio.descartadas) || 0} registros de precio fuera de un rango plausible (posibles errores de tipeo, ej. precios de 1 Gs. o de 900.000+ Gs.) antes de calcular estos mínimos y máximos.</span>
       </div>
     </div>`;
 
@@ -209,14 +212,14 @@ function renderResumen(c, themeChanged){
     data: {
       labels: r.precio_por_corte.map(x=>x.corte),
       datasets: [
-        { label: 'Minerva (propio)', data: r.precio_por_corte.map(x=>x.precio_propio), backgroundColor: teal, borderRadius: 5, maxBarThickness: 26 },
-        { label: 'Competencia', data: r.precio_por_corte.map(x=>x.precio_competencia), backgroundColor: accent, borderRadius: 5, maxBarThickness: 26 },
+        { label: 'Minerva (rango)', data: r.precio_por_corte.map(x=>[x.propio_min, x.propio_max]), backgroundColor: teal, borderRadius: 5, maxBarThickness: 22 },
+        { label: 'Competencia (rango)', data: r.precio_por_corte.map(x=>[x.comp_min, x.comp_max]), backgroundColor: accent, borderRadius: 5, maxBarThickness: 22 },
       ]
     },
     options: {
       indexAxis: 'y', responsive: true, maintainAspectRatio: false,
       plugins: { legend: { position: 'top', labels: { color: textCol, font: { family:'Outfit', size: 11 } } },
-        tooltip: { callbacks: { label: (i)=> `${i.dataset.label}: ${fmtGs(i.raw)}` } } },
+        tooltip: { callbacks: { label: (i)=> `${i.dataset.label}: ${fmtGs(i.raw[0])} \u2013 ${fmtGs(i.raw[1])}` } } },
       scales: {
         x: { ticks: { color: textCol, callback: v=>fmtNum(v) }, grid: { color: gridBig } },
         y: { ticks: { color: textCol, font:{family:'Outfit', size:11} }, grid: { display:false } }
@@ -236,26 +239,27 @@ function renderPrecios(c, themeChanged){
     c.innerHTML = `
     <div class="card">
       <div class="card-head">
-        <div><div class="card-title">Comparativo por corte y marca</div><div class="card-sub">Elegí un corte para ver el detalle por marca competidora</div></div>
+        <div><div class="card-title">Comparativo por corte y marca</div><div class="card-sub">Elegí un corte para ver el rango mín–máx por marca competidora</div></div>
         <div class="chips" id="corteChips"></div>
       </div>
       <div class="chart-wrap" style="height:320px;"><canvas id="chPreciosDetalle"></canvas></div>
     </div>
 
     <div class="card">
-      <div class="card-head"><div class="card-title">Detalle por corte — mínimo, máximo y promedio</div></div>
+      <div class="card-head"><div class="card-title">Detalle por corte — mínimo y máximo</div></div>
       <div class="table-scroll"><table id="tblPreciosDetalle">
-        <thead><tr><th>Corte</th><th>Marca</th><th>Tipo</th><th class="num">Mínimo</th><th class="num">Promedio</th><th class="num">Máximo</th><th class="num">Muestras</th></tr></thead>
+        <thead><tr><th>Corte</th><th>Marca</th><th>Tipo</th><th class="num">Mínimo</th><th class="num">Máximo</th><th class="num">Muestras</th></tr></thead>
         <tbody></tbody></table></div>
     </div>
 
     <div class="card">
       <div class="card-head"><div class="card-title">Precios por local</div><div class="card-sub">Locales con más cortes propios relevados (top 80)</div></div>
       <div class="table-scroll"><table>
-        <thead><tr><th>Local</th><th>Cadena</th><th class="num">Cortes propios</th><th class="num">Precio propio prom.</th><th class="num">Precio competencia prom.</th></tr></thead>
+        <thead><tr><th>Local</th><th>Cadena</th><th class="num">Cortes propios</th><th class="num">Mín. propio</th><th class="num">Máx. propio</th><th class="num">Mín. comp.</th><th class="num">Máx. comp.</th></tr></thead>
         <tbody>${p.por_local.map(x=>`
           <tr><td>${x.local}</td><td>${x.cadena}</td><td class="num">${x.n_cortes_propio}</td>
-          <td class="num">${fmtGs(x.precio_propio_prom)}</td><td class="num">${fmtGs(x.precio_competencia_prom)}</td></tr>`).join('')}
+          <td class="num">${fmtGs(x.propio_min)}</td><td class="num">${fmtGs(x.propio_max)}</td>
+          <td class="num">${fmtGs(x.comp_min)}</td><td class="num">${fmtGs(x.comp_max)}</td></tr>`).join('')}
         </tbody></table></div>
     </div>`;
 
@@ -274,15 +278,15 @@ function renderPrecios(c, themeChanged){
 
   function drawPreciosChart(){
     destroyChart('preciosDetalle');
-    const compRows = p.competencia_detalle.filter(x=>x.corte===preciosCorteFiltro).sort((a,b)=>b.precio_prom-a.precio_prom);
+    const compRows = p.competencia_detalle.filter(x=>x.corte===preciosCorteFiltro).sort((a,b)=>b.precio_max-a.precio_max);
     const propioRows = p.propio_detalle.filter(x=>x.corte===preciosCorteFiltro);
     const labels = [...propioRows.map(x=>x.marca), ...compRows.map(x=>x.marca)];
-    const values = [...propioRows.map(x=>x.precio_prom), ...compRows.map(x=>x.precio_prom)];
+    const values = [...propioRows.map(x=>[x.precio_min,x.precio_max]), ...compRows.map(x=>[x.precio_min,x.precio_max])];
     const colors = [...propioRows.map(()=>teal), ...compRows.map(()=>accent)];
     charts['preciosDetalle'] = new Chart(document.getElementById('chPreciosDetalle'), {
       type: 'bar',
       data: { labels, datasets: [{ data: values, backgroundColor: colors, borderRadius: 6, maxBarThickness: 34 }] },
-      options: { responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}, tooltip:{callbacks:{label:i=>fmtGs(i.raw)}}},
+      options: { responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}, tooltip:{callbacks:{label:i=>`${fmtGs(i.raw[0])} \u2013 ${fmtGs(i.raw[1])}`}}},
         scales: { x:{ ticks:{color:textCol, font:{family:'Outfit',size:10.5}, autoSkip:false, maxRotation:35, minRotation:0} , grid:{display:false}},
                   y:{ ticks:{color:textCol, callback:v=>fmtNum(v)}, grid:{color:gridBig} } } }
     });
@@ -294,12 +298,11 @@ function renderPrecios(c, themeChanged){
     ].sort((a,b)=> (a.tipo==='Propia'?-1:1) - (b.tipo==='Propia'?-1:1) || b.n-a.n);
     document.querySelector('#tblPreciosDetalle tbody').innerHTML = rows.map(x=>`
       <tr><td>${x.corte}</td><td>${x.marca}</td><td><span class="tag ${x.tipo==='Propia'?'tag-propio':'tag-comp'}">${x.tipo}</span></td>
-      <td class="num">${fmtGs(x.precio_min)}</td><td class="num">${fmtGs(x.precio_prom)}</td><td class="num">${fmtGs(x.precio_max)}</td><td class="num">${x.n}</td></tr>`).join('');
+      <td class="num">${fmtGs(x.precio_min)}</td><td class="num">${fmtGs(x.precio_max)}</td><td class="num">${x.n}</td></tr>`).join('');
   }
   drawPreciosChart(); fillPreciosTable();
 }
 
-/* ================= 3. PEDIDOS ================= */
 function renderPedidos(c, themeChanged){
   const pd = DATA.pedidos;
   const textCol = cssVar('--text2'), gridBig = cssVar('--border'), accent = cssVar('--accent'), teal = cssVar('--teal');
@@ -389,7 +392,7 @@ function renderCompetencia(c, themeChanged){
         <div class="chart-wrap" style="height:360px;"><canvas id="chCompPresencia"></canvas></div>
       </div>
       <div class="card">
-        <div class="card-head"><div class="card-title">Precio promedio por marca</div></div>
+        <div class="card-head"><div class="card-title">Rango de precio por marca</div><div class="card-sub">Mínimo–máximo, sin promedio</div></div>
         <div class="chart-wrap" style="height:360px;"><canvas id="chCompPrecio"></canvas></div>
       </div>
     </div>
@@ -397,10 +400,11 @@ function renderCompetencia(c, themeChanged){
     <div class="card">
       <div class="card-head"><div class="card-title">Detalle de competencia</div></div>
       <div class="table-scroll"><table>
-        <thead><tr><th>Marca</th><th class="num">Locales</th><th class="num">Precio prom.</th><th class="num">Diferencial vs. Minerva</th><th>Cortes top</th><th>Amenaza</th></tr></thead>
+        <thead><tr><th>Marca</th><th class="num">Locales</th><th class="num">Mínimo</th><th class="num">Máximo</th><th class="num">Dif. mín. vs. Minerva</th><th class="num">Dif. máx. vs. Minerva</th><th>Cortes top</th><th>Amenaza</th></tr></thead>
         <tbody>${cp.marcas.map(m=>`
-          <tr><td>${m.marca}</td><td class="num">${m.locales}</td><td class="num">${fmtGs(m.precio_prom)}</td>
-          <td class="num">${m.diferencial_vs_minerva_pct>0?'+':''}${m.diferencial_vs_minerva_pct}%</td>
+          <tr><td>${m.marca}</td><td class="num">${m.locales}</td><td class="num">${fmtGs(m.precio_min)}</td><td class="num">${fmtGs(m.precio_max)}</td>
+          <td class="num">${m.diferencial_min_pct>0?'+':''}${m.diferencial_min_pct}%</td>
+          <td class="num">${m.diferencial_max_pct>0?'+':''}${m.diferencial_max_pct}%</td>
           <td>${m.top_cortes.join(', ')}</td>
           <td><span class="tag tag-${m.amenaza.toLowerCase()==='alta'?'alta':(m.amenaza.toLowerCase()==='media'?'media':'baja')}">${m.amenaza}</span></td></tr>`).join('')}
         </tbody></table></div>
@@ -417,13 +421,12 @@ function renderCompetencia(c, themeChanged){
   });
   charts['compPrecio'] = new Chart(document.getElementById('chCompPrecio'), {
     type: 'bar',
-    data: { labels: top.map(x=>x.marca), datasets: [{ data: top.map(x=>x.precio_prom), backgroundColor: palette[0], borderRadius:5, maxBarThickness:22 }] },
-    options: { indexAxis:'y', responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}, tooltip:{callbacks:{label:i=>fmtGs(i.raw)}}},
+    data: { labels: top.map(x=>x.marca), datasets: [{ data: top.map(x=>[x.precio_min,x.precio_max]), backgroundColor: palette[0], borderRadius:5, maxBarThickness:22 }] },
+    options: { indexAxis:'y', responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}, tooltip:{callbacks:{label:i=>`${fmtGs(i.raw[0])} \u2013 ${fmtGs(i.raw[1])}`}}},
       scales:{ x:{ticks:{color:textCol, callback:v=>fmtNum(v)}, grid:{color:gridBig}}, y:{ticks:{color:textCol, font:{family:'Outfit',size:10.5}}, grid:{display:false}} } }
   });
 }
 
-/* ================= 5. COBERTURA ================= */
 function renderCobertura(c, themeChanged){
   const cv = DATA.cobertura;
   const textCol = cssVar('--text2'), gridBig = cssVar('--border'), teal = cssVar('--teal'), accent = cssVar('--accent');
